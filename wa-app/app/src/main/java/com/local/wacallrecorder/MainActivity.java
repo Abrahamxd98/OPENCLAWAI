@@ -50,7 +50,7 @@ public class MainActivity extends Activity {
         root.setPadding(p, p, p, p);
         scroll.addView(root);
 
-        root.addView(text("Grabador WA · v0.1.5", 24, true));
+        root.addView(text("Grabador WA · v0.1.6", 24, true));
         root.addView(text("Objetivo: grabar automáticamente cada llamada de WhatsApp. Una vez configurado, no necesitas abrir esta app para iniciar o detener la grabación.", 15, false));
 
         status = text("", 15, false);
