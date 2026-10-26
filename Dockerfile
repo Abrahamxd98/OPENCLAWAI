@@ -21,7 +21,8 @@ RUN gradle --no-daemon assembleDebug && \
 
 FROM python:3.12-slim
 WORKDIR /srv
-COPY --from=build /src/app/build/outputs/apk/debug/app-debug.apk /srv/Grabador-WA-v0.1.2.apk
-RUN cp /srv/Grabador-WA-v0.1.2.apk /srv/Grabador-WA.apk && \
-    cp /srv/Grabador-WA-v0.1.2.apk /srv/Grabador-WA-v0.1.apk
+COPY --from=build /src/app/build/outputs/apk/debug/app-debug.apk /srv/Grabador-WA-v0.1.3.apk
+RUN cp /srv/Grabador-WA-v0.1.3.apk /srv/Grabador-WA.apk && \
+    cp /srv/Grabador-WA-v0.1.3.apk /srv/Grabador-WA-v0.1.apk && \
+    cp /srv/Grabador-WA-v0.1.3.apk /srv/Grabador-WA-v0.1.2.apk
 CMD ["sh","-c","python -m http.server ${PORT:-8080} --bind 0.0.0.0"]
