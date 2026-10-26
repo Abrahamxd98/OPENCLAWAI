@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.media.AudioFormat;
+import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.Process;
@@ -34,6 +35,8 @@ public final class RecorderEngine {
     private long startedAt;
     private int maxAmplitude = 0;
     private long nonSilentSamples = 0;
+    private int activeAudioSource = MediaRecorder.AudioSource.MIC;
+    private String activeAudioSourceName = "MIC";
 
     public RecorderEngine(Context c, String owner, String contact, Listener listener) {
         this.context = c.getApplicationContext();
@@ -57,11 +60,9 @@ public final class RecorderEngine {
             int min = AudioRecord.getMinBufferSize(SAMPLE_RATE,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
             int buffer = Math.max(min, SAMPLE_RATE * 2);
-            audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC,
-                    SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT, buffer);
-            if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
-                fail("AudioRecord no pudo inicializarse");
+            audioRecord = createBestAudioRecord(buffer);
+            if (audioRecord == null || audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
+                fail("AudioRecord no pudo inicializarse con ninguna fuente");
                 releaseAudio();
                 return false;
             }
@@ -75,12 +76,18 @@ public final class RecorderEngine {
             nonSilentSamples = 0;
 
             audioRecord.startRecording();
+            if (audioRecord.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
+                fail("AudioRecord no entró en estado RECORDING");
+                releaseAudio();
+                return false;
+            }
+
             running.set(true);
             AppState.prefs(context).edit()
                     .putBoolean(AppState.KEY_RECORDING_ACTIVE, true)
                     .putString(AppState.KEY_RECORDING_OWNER, owner)
                     .apply();
-            DebugLog.write(context, "RecorderEngine START owner=" + owner + " file=" + wavFile.getName());
+            DebugLog.write(context, "RecorderEngine START owner=" + owner + " source=" + activeAudioSourceName + " file=" + wavFile.getName());
             if (listener != null) listener.onStarted(wavFile);
 
             final int finalBuffer = buffer;
@@ -93,6 +100,44 @@ public final class RecorderEngine {
             AppState.prefs(context).edit().putBoolean(AppState.KEY_RECORDING_ACTIVE, false).remove(AppState.KEY_RECORDING_OWNER).apply();
             return false;
         }
+    }
+
+    private AudioRecord createBestAudioRecord(int buffer) {
+        AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        boolean unprocessedSupported = false;
+        try {
+            String p = am == null ? null : am.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED);
+            unprocessedSupported = "true".equalsIgnoreCase(p);
+        } catch (Throwable ignored) {}
+
+        int[] sources = unprocessedSupported
+                ? new int[]{MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC}
+                : new int[]{MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC};
+
+        for (int source : sources) {
+            AudioRecord candidate = null;
+            try {
+                candidate = new AudioRecord(source, SAMPLE_RATE,
+                        AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, buffer);
+                if (candidate.getState() == AudioRecord.STATE_INITIALIZED) {
+                    activeAudioSource = source;
+                    activeAudioSourceName = sourceName(source);
+                    DebugLog.write(context, "Audio source selected=" + activeAudioSourceName + " unprocessedSupported=" + unprocessedSupported);
+                    return candidate;
+                }
+            } catch (Throwable t) {
+                DebugLog.write(context, "Audio source failed=" + sourceName(source) + " " + t.getClass().getSimpleName() + ": " + t.getMessage());
+            }
+            try { if (candidate != null) candidate.release(); } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private String sourceName(int source) {
+        if (source == MediaRecorder.AudioSource.UNPROCESSED) return "UNPROCESSED";
+        if (source == MediaRecorder.AudioSource.VOICE_RECOGNITION) return "VOICE_RECOGNITION";
+        if (source == MediaRecorder.AudioSource.MIC) return "MIC";
+        return String.valueOf(source);
     }
 
     private void captureLoop(int bufferSize) {
@@ -137,7 +182,7 @@ public final class RecorderEngine {
         boolean audioDetected = maxAmplitude >= 500 && nonSilentSamples >= 800;
         writeMetadata(duration, audioDetected);
         AppState.prefs(context).edit().putBoolean(AppState.KEY_RECORDING_ACTIVE, false).remove(AppState.KEY_RECORDING_OWNER).apply();
-        DebugLog.write(context, "RecorderEngine STOP owner=" + owner + " file=" + (wavFile == null ? "" : wavFile.getName())
+        DebugLog.write(context, "RecorderEngine STOP owner=" + owner + " source=" + activeAudioSourceName + " file=" + (wavFile == null ? "" : wavFile.getName())
                 + " durationMs=" + duration + " maxAmplitude=" + maxAmplitude + " audioDetected=" + audioDetected);
         if (listener != null) listener.onStopped(wavFile, audioDetected, maxAmplitude, duration);
     }
@@ -150,6 +195,8 @@ public final class RecorderEngine {
             w.write("{\n");
             w.write("  \"contact\": \"" + esc(contact) + "\",\n");
             w.write("  \"owner\": \"" + esc(owner) + "\",\n");
+            w.write("  \"audioSource\": \"" + esc(activeAudioSourceName) + "\",\n");
+            w.write("  \"audioSourceId\": " + activeAudioSource + ",\n");
             w.write("  \"startedAtMs\": " + startedAt + ",\n");
             w.write("  \"durationMs\": " + durationMs + ",\n");
             w.write("  \"sampleRate\": " + SAMPLE_RATE + ",\n");
