@@ -15,9 +15,11 @@ WORKDIR /src
 COPY wa-app/ /src/
 RUN gradle --no-daemon assembleDebug && \
     apksigner verify --verbose --print-certs /src/app/build/outputs/apk/debug/app-debug.apk && \
-    aapt dump badging /src/app/build/outputs/apk/debug/app-debug.apk | head -20
+    aapt dump badging /src/app/build/outputs/apk/debug/app-debug.apk > /tmp/badging.txt 2>&1 && \
+    cat /tmp/badging.txt && \
+    ! grep -q "error:" /tmp/badging.txt
 
 FROM python:3.12-slim
 WORKDIR /srv
-COPY --from=build /src/app/build/outputs/apk/debug/app-debug.apk /srv/Grabador-WA-v0.1.1.apk
+COPY --from=build /src/app/build/outputs/apk/debug/app-debug.apk /srv/Grabador-WA-v0.1.2.apk
 CMD ["sh","-c","python -m http.server ${PORT:-8080} --bind 0.0.0.0"]
