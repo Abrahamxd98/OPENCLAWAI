@@ -11,20 +11,41 @@ RUN mkdir -p /opt/android-sdk/cmdline-tools && \
     rm -rf /tmp/cmdline /tmp/cmdline.zip && \
     yes | sdkmanager --licenses >/dev/null || true
 RUN sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+ARG APK_KEYSTORE_B64
+ARG APK_KEYSTORE_PASSWORD
+ARG APK_KEY_ALIAS
+ARG APK_KEY_PASSWORD
+
 WORKDIR /src
 COPY wa-app/ /src/
-RUN gradle --no-daemon assembleDebug && \
-    apksigner verify --verbose --print-certs /src/app/build/outputs/apk/debug/app-debug.apk && \
-    aapt dump badging /src/app/build/outputs/apk/debug/app-debug.apk > /tmp/badging.txt 2>&1 && \
+RUN test -n "$APK_KEYSTORE_B64" && \
+    test -n "$APK_KEYSTORE_PASSWORD" && \
+    test -n "$APK_KEY_ALIAS" && \
+    test -n "$APK_KEY_PASSWORD" && \
+    printf '%s' "$APK_KEYSTORE_B64" | base64 -d > /tmp/grabadorwa.p12 && \
+    gradle --no-daemon assembleRelease && \
+    zipalign -f -p 4 /src/app/build/outputs/apk/release/app-release-unsigned.apk /src/app-release-aligned.apk && \
+    apksigner sign \
+      --ks /tmp/grabadorwa.p12 \
+      --ks-type PKCS12 \
+      --ks-key-alias "$APK_KEY_ALIAS" \
+      --ks-pass pass:"$APK_KEYSTORE_PASSWORD" \
+      --key-pass pass:"$APK_KEY_PASSWORD" \
+      --out /src/Grabador-WA-v0.1.6.apk \
+      /src/app-release-aligned.apk && \
+    apksigner verify --verbose --print-certs /src/Grabador-WA-v0.1.6.apk && \
+    aapt dump badging /src/Grabador-WA-v0.1.6.apk > /tmp/badging.txt 2>&1 && \
     cat /tmp/badging.txt && \
     ! grep -q "error:" /tmp/badging.txt
 
 FROM python:3.12-slim
 WORKDIR /srv
-COPY --from=build /src/app/build/outputs/apk/debug/app-debug.apk /srv/Grabador-WA-v0.1.5.apk
-RUN cp /srv/Grabador-WA-v0.1.5.apk /srv/Grabador-WA.apk && \
-    cp /srv/Grabador-WA-v0.1.5.apk /srv/Grabador-WA-v0.1.apk && \
-    cp /srv/Grabador-WA-v0.1.5.apk /srv/Grabador-WA-v0.1.2.apk && \
-    cp /srv/Grabador-WA-v0.1.5.apk /srv/Grabador-WA-v0.1.3.apk && \
-    cp /srv/Grabador-WA-v0.1.5.apk /srv/Grabador-WA-v0.1.4.apk
+COPY --from=build /src/Grabador-WA-v0.1.6.apk /srv/Grabador-WA-v0.1.6.apk
+RUN cp /srv/Grabador-WA-v0.1.6.apk /srv/Grabador-WA.apk && \
+    cp /srv/Grabador-WA-v0.1.6.apk /srv/Grabador-WA-v0.1.apk && \
+    cp /srv/Grabador-WA-v0.1.6.apk /srv/Grabador-WA-v0.1.2.apk && \
+    cp /srv/Grabador-WA-v0.1.6.apk /srv/Grabador-WA-v0.1.3.apk && \
+    cp /srv/Grabador-WA-v0.1.6.apk /srv/Grabador-WA-v0.1.4.apk && \
+    cp /srv/Grabador-WA-v0.1.6.apk /srv/Grabador-WA-v0.1.5.apk
 CMD ["sh","-c","python -m http.server ${PORT:-8080} --bind 0.0.0.0"]
