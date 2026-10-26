@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Grabador WA</string>
+    <string name="accessibility_description">Detecta una llamada de WhatsApp en este teléfono, muestra un indicador REC visible e intenta conservar acceso al micrófono durante la llamada. No lee mensajes ni ejecuta gestos.</string>
+</resources>
