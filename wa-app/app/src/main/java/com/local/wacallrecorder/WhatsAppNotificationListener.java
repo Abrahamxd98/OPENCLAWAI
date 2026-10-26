@@ -72,7 +72,10 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
         String text = stringOf(e.getCharSequence(Notification.EXTRA_TEXT));
         String big = stringOf(e.getCharSequence(Notification.EXTRA_BIG_TEXT));
         String category = n.category == null ? "" : n.category;
-        return Notification.CATEGORY_CALL.equals(category) || containsCallWords(title + " " + text + " " + big);
+        String combined = title + " " + text + " " + big;
+
+        if (containsExcludedWords(combined)) return false;
+        return Notification.CATEGORY_CALL.equals(category) || containsCallWords(combined);
     }
 
     private void logNotification(String event, StatusBarNotification sbn, boolean looksLikeCall) {
@@ -99,10 +102,21 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
         return s == null ? "" : s.toString();
     }
 
+    private static boolean containsExcludedWords(String value) {
+        String s = value == null ? "" : value.toLowerCase(Locale.ROOT);
+        String[] excluded = {
+                "copia de seguridad", "backup", "restaurando", "restoring",
+                "subiendo", "uploading", "descargando", "downloading",
+                "verificando", "preparando copia", "preparing backup"
+        };
+        for (String w : excluded) if (s.contains(w)) return true;
+        return false;
+    }
+
     private static boolean containsCallWords(String value) {
         String s = value == null ? "" : value.toLowerCase(Locale.ROOT);
         String[] words = {
-                "llamada", "llamando", "llamada de voz", "videollamada", "en curso",
+                "llamada", "llamando", "llamada de voz", "videollamada", "llamada en curso",
                 "call", "calling", "voice call", "video call", "ongoing call", "ringing"
         };
         for (String w : words) if (s.contains(w)) return true;
