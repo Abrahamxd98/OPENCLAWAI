@@ -3,7 +3,9 @@ package com.local.wacallrecorder;
 import android.accessibilityservice.AccessibilityService;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -17,6 +19,7 @@ public class RecorderAccessibilityService extends AccessibilityService {
     private long noCallSince = 0L;
     private WindowManager wm;
     private TextView overlay;
+    private boolean speakerRouteApplied = false;
 
     private final Runnable poll = new Runnable() {
         @Override public void run() {
@@ -59,11 +62,48 @@ public class RecorderAccessibilityService extends AccessibilityService {
 
         if (shouldRecord) {
             noCallSince = 0L;
+            if (communicationMode) ensureSpeakerRoute();
             if (engine == null) startAutomaticRecording();
         } else if (engine != null) {
             if (noCallSince == 0L) noCallSince = System.currentTimeMillis();
             if (System.currentTimeMillis() - noCallSince >= 2500L) stopAutomaticRecording();
         }
+    }
+
+    private void ensureSpeakerRoute() {
+        if (speakerRouteApplied) return;
+        try {
+            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am == null) return;
+            boolean ok = false;
+            if (Build.VERSION.SDK_INT >= 31) {
+                for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
+                    if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                        ok = am.setCommunicationDevice(d);
+                        break;
+                    }
+                }
+            } else {
+                am.setSpeakerphoneOn(true);
+                ok = true;
+            }
+            speakerRouteApplied = ok;
+            DebugLog.write(this, "Speaker route apply=" + ok);
+        } catch (Throwable t) {
+            DebugLog.write(this, "Speaker route error=" + t.getClass().getSimpleName() + ": " + t.getMessage());
+        }
+    }
+
+    private void restoreAudioRoute() {
+        if (!speakerRouteApplied) return;
+        try {
+            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am != null) {
+                if (Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice();
+                else am.setSpeakerphoneOn(false);
+            }
+        } catch (Throwable ignored) {}
+        speakerRouteApplied = false;
     }
 
     private void startAutomaticRecording() {
@@ -79,11 +119,13 @@ public class RecorderAccessibilityService extends AccessibilityService {
             @Override public void onStopped(java.io.File wavFile, boolean audioDetected, int maxAmplitude, long durationMs) {
                 DebugLog.write(RecorderAccessibilityService.this, "AUTO STOP audioDetected=" + audioDetected + " amp=" + maxAmplitude);
                 hideOverlay();
+                restoreAudioRoute();
                 engine = null;
             }
             @Override public void onError(String error) {
                 DebugLog.write(RecorderAccessibilityService.this, "AUTO ERROR " + error);
                 hideOverlay();
+                restoreAudioRoute();
                 engine = null;
             }
         });
@@ -98,6 +140,7 @@ public class RecorderAccessibilityService extends AccessibilityService {
         noCallSince = 0L;
         if (e != null) e.stop();
         hideOverlay();
+        restoreAudioRoute();
     }
 
     private void showOverlay() {
