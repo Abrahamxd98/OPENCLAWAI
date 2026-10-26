@@ -50,8 +50,8 @@ public class MainActivity extends Activity {
         root.setPadding(p, p, p, p);
         scroll.addView(root);
 
-        root.addView(text("Grabador WA · v0.1.6", 24, true));
-        root.addView(text("Objetivo: grabar automáticamente cada llamada de WhatsApp. Una vez configurado, no necesitas abrir esta app para iniciar o detener la grabación.", 15, false));
+        root.addView(text("Grabador WA · v0.1.7", 24, true));
+        root.addView(text("Objetivo: grabar automáticamente cada llamada de WhatsApp, incluyendo al interlocutor cuando Android permita captarlo acústicamente.", 15, false));
 
         status = text("", 15, false);
         status.setPadding(0, dp(16), 0, dp(16));
@@ -65,7 +65,7 @@ public class MainActivity extends Activity {
         addButton("3. Activar grabación automática (Accesibilidad)", v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         addButton("Actualizar estado", v -> { refreshStatus(); refreshRecordings(); });
 
-        TextView info = text("Cuando una llamada de WhatsApp sea detectada, debe aparecer “● REC WA” y la grabación comenzará sola. Al colgar, se guardará automáticamente el archivo WAV. Para intentar registrar ambas voces, usa ALTAVOZ.", 14, false);
+        TextView info = text("Durante una llamada detectada, la app intentará usar una fuente de micrófono menos procesada y enrutar el audio al altavoz para mejorar la captura del interlocutor. La grabación inicia y termina sola.", 14, false);
         info.setPadding(0, dp(14), 0, dp(8));
         root.addView(info);
 
