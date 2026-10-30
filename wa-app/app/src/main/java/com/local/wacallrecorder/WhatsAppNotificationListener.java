@@ -18,21 +18,24 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
         if (sbn == null || !AppState.isWhatsApp(sbn.getPackageName())) return;
         boolean looksLikeCall = looksLikeCall(sbn);
         logNotification("posted", sbn, looksLikeCall);
+        if (!looksLikeCall) return;
 
-        if (looksLikeCall) {
-            callKeys.add(sbn.getKey());
-            Notification n = sbn.getNotification();
-            String title = n == null ? "" : stringOf(n.extras.getCharSequence(Notification.EXTRA_TITLE));
-            long now = System.currentTimeMillis();
-            AppState.prefs(this).edit()
-                    .putBoolean(AppState.KEY_NOTIFICATION_CALL_ACTIVE, true)
-                    .putString(AppState.KEY_CONTACT, title)
-                    .putString(AppState.KEY_CALL_PACKAGE, sbn.getPackageName())
-                    .putLong(AppState.KEY_CALL_START_MS, now)
-                    .apply();
-            sendStateBroadcast();
-            CallPromptNotifier.show(this, title);
-        }
+        callKeys.add(sbn.getKey());
+        Notification n = sbn.getNotification();
+        String title = n == null ? "" : stringOf(n.extras.getCharSequence(Notification.EXTRA_TITLE));
+        String kind = AppState.callKindForPackage(sbn.getPackageName());
+        String contact = title == null || title.trim().isEmpty() ? kind : title.trim();
+        long now = System.currentTimeMillis();
+
+        AppState.prefs(this).edit()
+                .putBoolean(AppState.KEY_NOTIFICATION_CALL_ACTIVE, true)
+                .putString(AppState.KEY_CONTACT, contact)
+                .putString(AppState.KEY_CALL_PACKAGE, sbn.getPackageName())
+                .putString(AppState.KEY_CALL_KIND, kind)
+                .putLong(AppState.KEY_CALL_START_MS, now)
+                .apply();
+        sendStateBroadcast();
+        CallPromptNotifier.show(this, contact, kind);
     }
 
     @Override
@@ -55,7 +58,10 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
         }
         if (anotherCall) return;
 
-        AppState.prefs(this).edit().putBoolean(AppState.KEY_NOTIFICATION_CALL_ACTIVE, false).apply();
+        AppState.prefs(this).edit()
+                .putBoolean(AppState.KEY_NOTIFICATION_CALL_ACTIVE, false)
+                .remove(AppState.KEY_CALL_PACKAGE)
+                .apply();
         sendStateBroadcast();
         CallPromptNotifier.cancel(this);
 
@@ -86,8 +92,8 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
         String big = stringOf(e.getCharSequence(Notification.EXTRA_BIG_TEXT));
         String category = n == null || n.category == null ? "" : n.category;
         boolean ongoing = n != null && (n.flags & Notification.FLAG_ONGOING_EVENT) != 0;
-        DebugLog.write(this, "WA notification " + event + " key=" + sbn.getKey()
-                + " category=" + category + " ongoing=" + ongoing
+        DebugLog.write(this, "WA notification " + event + " pkg=" + sbn.getPackageName()
+                + " key=" + sbn.getKey() + " category=" + category + " ongoing=" + ongoing
                 + " title=" + title + " text=" + text + " big=" + big
                 + " looksLikeCall=" + looksLikeCall);
     }
