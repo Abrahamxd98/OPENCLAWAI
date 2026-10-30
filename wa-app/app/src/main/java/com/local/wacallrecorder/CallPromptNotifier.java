@@ -9,22 +9,23 @@ import android.content.Intent;
 import android.os.Build;
 
 public final class CallPromptNotifier {
-    private static final String CHANNEL_ID = "wa_call_detected";
+    private static final String CHANNEL_ID = "call_detected";
     private static final int NOTIFICATION_ID = 7001;
     private CallPromptNotifier() {}
 
-    public static void show(Context c, String contact) {
+    public static void show(Context c, String contact, String kind) {
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "Llamadas WhatsApp detectadas", NotificationManager.IMPORTANCE_HIGH);
-            ch.setDescription("Permite iniciar manualmente la grabación cuando Android no admite el inicio automático.");
+            NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "Llamadas detectadas", NotificationManager.IMPORTANCE_HIGH);
+            ch.setDescription("Permite iniciar la grabación de una llamada mediante una acción explícita.");
             nm.createNotificationChannel(ch);
         }
 
         Intent record = new Intent(c, RecorderForegroundService.class);
         record.setAction(RecorderForegroundService.ACTION_START);
         record.putExtra("contact", contact);
-        PendingIntent recordPi = PendingIntent.getService(c, 100, record,
+        record.putExtra("call_kind", kind);
+        PendingIntent recordPi = PendingIntent.getForegroundService(c, 100, record,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
         Intent open = new Intent(c, MainActivity.class);
@@ -35,17 +36,25 @@ public final class CallPromptNotifier {
                 ? new Notification.Builder(c, CHANNEL_ID)
                 : new Notification.Builder(c);
 
+        String shownKind = labelForKind(kind);
+        String shownContact = contact == null || contact.trim().isEmpty() ? shownKind : contact.trim();
         Notification n = b
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                .setContentTitle("Llamada de WhatsApp detectada")
-                .setContentText((contact == null || contact.isEmpty() ? "WhatsApp" : contact) + " · usa altavoz para intentar captar ambas voces")
+                .setContentTitle(shownKind + " detectada")
+                .setContentText(shownContact + " · toca Grabar para iniciar")
                 .setCategory(Notification.CATEGORY_CALL)
                 .setOngoing(false)
-                .setAutoCancel(true)
+                .setAutoCancel(false)
                 .setContentIntent(openPi)
                 .addAction(new Notification.Action.Builder(null, "Grabar", recordPi).build())
                 .build();
         nm.notify(NOTIFICATION_ID, n);
+    }
+
+    private static String labelForKind(String kind) {
+        if ("WHATSAPP_BUSINESS".equals(kind)) return "WhatsApp Business";
+        if ("WHATSAPP".equals(kind)) return "WhatsApp";
+        return "Llamada celular";
     }
 
     public static void cancel(Context c) {
