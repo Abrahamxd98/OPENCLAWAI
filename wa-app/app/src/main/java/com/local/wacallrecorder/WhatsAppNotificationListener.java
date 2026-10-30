@@ -15,7 +15,7 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
 
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
-        if (sbn == null || !AppState.isWhatsApp(sbn.getPackageName())) return;
+        if (sbn == null || !isSupportedCallNotification(sbn)) return;
         boolean looksLikeCall = looksLikeCall(sbn);
         logNotification("posted", sbn, looksLikeCall);
         if (!looksLikeCall) return;
@@ -24,7 +24,8 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
         Notification n = sbn.getNotification();
         String title = n == null ? "" : stringOf(n.extras.getCharSequence(Notification.EXTRA_TITLE));
         String kind = AppState.callKindForPackage(sbn.getPackageName());
-        String contact = title == null || title.trim().isEmpty() ? kind : title.trim();
+        String fallback = "CELULAR".equals(kind) ? "Llamada celular" : kind;
+        String contact = title == null || title.trim().isEmpty() ? fallback : title.trim();
         long now = System.currentTimeMillis();
 
         AppState.prefs(this).edit()
@@ -40,7 +41,7 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
 
     @Override
     public void onNotificationRemoved(StatusBarNotification sbn) {
-        if (sbn == null || !AppState.isWhatsApp(sbn.getPackageName())) return;
+        if (sbn == null || !isSupportedCallNotification(sbn)) return;
         boolean looksLikeCall = callKeys.remove(sbn.getKey()) || looksLikeCall(sbn);
         logNotification("removed", sbn, looksLikeCall);
         if (!looksLikeCall) return;
@@ -49,7 +50,7 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
         StatusBarNotification[] active = getActiveNotifications();
         if (active != null) {
             for (StatusBarNotification x : active) {
-                if (x != null && AppState.isWhatsApp(x.getPackageName()) && looksLikeCall(x)) {
+                if (x != null && isSupportedCallNotification(x) && looksLikeCall(x)) {
                     callKeys.add(x.getKey());
                     anotherCall = true;
                     break;
@@ -68,6 +69,15 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
         Intent stop = new Intent(this, RecorderForegroundService.class);
         stop.setAction(RecorderForegroundService.ACTION_STOP);
         stopService(stop);
+    }
+
+    private boolean isSupportedCallNotification(StatusBarNotification sbn) {
+        String pkg = sbn.getPackageName();
+        if (AppState.isWhatsApp(pkg)) return true;
+        Notification n = sbn.getNotification();
+        if (n == null || !Notification.CATEGORY_CALL.equals(n.category)) return false;
+        String p = pkg == null ? "" : pkg.toLowerCase(Locale.ROOT);
+        return p.contains("dialer") || p.contains("incall") || p.contains("phone") || p.contains("telecom");
     }
 
     private boolean looksLikeCall(StatusBarNotification sbn) {
@@ -92,7 +102,7 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
         String big = stringOf(e.getCharSequence(Notification.EXTRA_BIG_TEXT));
         String category = n == null || n.category == null ? "" : n.category;
         boolean ongoing = n != null && (n.flags & Notification.FLAG_ONGOING_EVENT) != 0;
-        DebugLog.write(this, "WA notification " + event + " pkg=" + sbn.getPackageName()
+        DebugLog.write(this, "CALL notification " + event + " pkg=" + sbn.getPackageName()
                 + " key=" + sbn.getKey() + " category=" + category + " ongoing=" + ongoing
                 + " title=" + title + " text=" + text + " big=" + big
                 + " looksLikeCall=" + looksLikeCall);
