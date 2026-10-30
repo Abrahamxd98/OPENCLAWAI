@@ -21,10 +21,12 @@ public final class CallPromptNotifier {
             nm.createNotificationChannel(ch);
         }
 
+        String shownKind = labelForKind(kind);
+        String shownContact = contact == null || contact.trim().isEmpty() ? shownKind : contact.trim();
+
         Intent record = new Intent(c, RecorderForegroundService.class);
         record.setAction(RecorderForegroundService.ACTION_START);
-        record.putExtra("contact", contact);
-        record.putExtra("call_kind", kind);
+        record.putExtra("contact", kind + "_" + shownContact);
         PendingIntent recordPi = PendingIntent.getForegroundService(c, 100, record,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
@@ -36,8 +38,6 @@ public final class CallPromptNotifier {
                 ? new Notification.Builder(c, CHANNEL_ID)
                 : new Notification.Builder(c);
 
-        String shownKind = labelForKind(kind);
-        String shownContact = contact == null || contact.trim().isEmpty() ? shownKind : contact.trim();
         Notification n = b
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle(shownKind + " detectada")
