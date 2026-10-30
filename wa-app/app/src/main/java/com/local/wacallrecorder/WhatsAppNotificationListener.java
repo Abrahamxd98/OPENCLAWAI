@@ -22,10 +22,11 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
 
         callKeys.add(sbn.getKey());
         Notification n = sbn.getNotification();
-        String title = n == null ? "" : stringOf(n.extras.getCharSequence(Notification.EXTRA_TITLE));
+        Bundle extras = n == null || n.extras == null ? new Bundle() : n.extras;
+        String title = stringOf(extras.getCharSequence(Notification.EXTRA_TITLE));
         String kind = AppState.callKindForPackage(sbn.getPackageName());
         String fallback = "CELULAR".equals(kind) ? "Llamada celular" : kind;
-        String contact = title == null || title.trim().isEmpty() ? fallback : title.trim();
+        String contact = title.trim().isEmpty() ? fallback : title.trim();
         long now = System.currentTimeMillis();
 
         AppState.prefs(this).edit()
@@ -77,7 +78,8 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
         Notification n = sbn.getNotification();
         if (n == null || !Notification.CATEGORY_CALL.equals(n.category)) return false;
         String p = pkg == null ? "" : pkg.toLowerCase(Locale.ROOT);
-        return p.contains("dialer") || p.contains("incall") || p.contains("phone") || p.contains("telecom");
+        return p.contains("dialer") || p.contains("incall") || p.contains("phone")
+                || p.contains("telecom") || p.contains("contacts");
     }
 
     private boolean looksLikeCall(StatusBarNotification sbn) {
