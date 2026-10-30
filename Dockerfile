@@ -32,21 +32,16 @@ RUN test -n "$APK_KEYSTORE_B64" && \
       --ks-key-alias "$APK_KEY_ALIAS" \
       --ks-pass pass:"$APK_KEYSTORE_PASSWORD" \
       --key-pass pass:"$APK_KEY_PASSWORD" \
-      --out /src/Grabador-WA-v0.1.7.apk \
+      --out /src/Grabador-Llamadas-v0.2.0.apk \
       /src/app-release-aligned.apk && \
-    apksigner verify --verbose --print-certs /src/Grabador-WA-v0.1.7.apk && \
-    aapt dump badging /src/Grabador-WA-v0.1.7.apk > /tmp/badging.txt 2>&1 && \
+    apksigner verify --verbose --print-certs /src/Grabador-Llamadas-v0.2.0.apk && \
+    aapt dump badging /src/Grabador-Llamadas-v0.2.0.apk > /tmp/badging.txt 2>&1 && \
     cat /tmp/badging.txt && \
     ! grep -q "error:" /tmp/badging.txt
 
 FROM python:3.12-slim
 WORKDIR /srv
-COPY --from=build /src/Grabador-WA-v0.1.7.apk /srv/Grabador-WA-v0.1.7.apk
-RUN cp /srv/Grabador-WA-v0.1.7.apk /srv/Grabador-WA.apk && \
-    cp /srv/Grabador-WA-v0.1.7.apk /srv/Grabador-WA-v0.1.apk && \
-    cp /srv/Grabador-WA-v0.1.7.apk /srv/Grabador-WA-v0.1.2.apk && \
-    cp /srv/Grabador-WA-v0.1.7.apk /srv/Grabador-WA-v0.1.3.apk && \
-    cp /srv/Grabador-WA-v0.1.7.apk /srv/Grabador-WA-v0.1.4.apk && \
-    cp /srv/Grabador-WA-v0.1.7.apk /srv/Grabador-WA-v0.1.5.apk && \
-    cp /srv/Grabador-WA-v0.1.7.apk /srv/Grabador-WA-v0.1.6.apk
+COPY --from=build /src/Grabador-Llamadas-v0.2.0.apk /srv/Grabador-Llamadas-v0.2.0.apk
+RUN cp /srv/Grabador-Llamadas-v0.2.0.apk /srv/Grabador-WA.apk && \
+    cp /srv/Grabador-Llamadas-v0.2.0.apk /srv/Grabador-Llamadas.apk
 CMD ["sh","-c","python -m http.server ${PORT:-8080} --bind 0.0.0.0"]
