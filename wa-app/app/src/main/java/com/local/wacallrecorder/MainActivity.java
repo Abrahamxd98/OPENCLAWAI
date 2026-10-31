@@ -6,6 +6,7 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
@@ -35,12 +36,23 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         buildUi();
         requestRuntimePermissions();
+        ensureDetectorServiceIfPossible();
     }
 
     @Override protected void onResume() {
         super.onResume();
+        ensureDetectorServiceIfPossible();
         refreshStatus();
         refreshRecordings();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_PERMS) {
+            ensureDetectorServiceIfPossible();
+            refreshStatus();
+        }
     }
 
     private void buildUi() {
@@ -51,8 +63,8 @@ public class MainActivity extends Activity {
         root.setPadding(p, p, p, p);
         scroll.addView(root);
 
-        root.addView(text("Grabador de llamadas · v0.2.0", 24, true));
-        root.addView(text("Detecta en segundo plano llamadas celulares, WhatsApp y WhatsApp Business. Cuando detecta una llamada, muestra una notificación con el botón Grabar. La grabación continúa aunque cierres la app y termina al finalizar la llamada.", 15, false));
+        root.addView(text("Grabador de llamadas · v0.2.1", 24, true));
+        root.addView(text("La detección ya no depende únicamente de las notificaciones. Un detector persistente vigila el modo de audio del sistema para reconocer llamadas celulares y llamadas de internet aun con la app cerrada. El acceso a notificaciones se usa como apoyo para identificar WhatsApp y WhatsApp Business.", 15, false));
 
         status = text("", 15, false);
         status.setPadding(0, dp(16), 0, dp(16));
@@ -65,9 +77,10 @@ public class MainActivity extends Activity {
         addButton("2. Activar acceso a notificaciones", v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
         addButton("3. Permitir funcionamiento en segundo plano", v -> openBatteryExemption());
         addButton("4. Abrir ajustes de la app / HyperOS", v -> openAppSettings());
+        addButton("Activar detector ahora", v -> { ensureDetectorService(); refreshStatus(); });
         addButton("Actualizar estado", v -> { refreshStatus(); refreshRecordings(); });
 
-        TextView info = text("Al recibir o realizar una llamada compatible aparecerá una notificación: CELULAR, WhatsApp o WhatsApp Business. Toca Grabar para iniciar. Mientras graba habrá una notificación persistente con Detener.", 14, false);
+        TextView info = text("Debe permanecer una notificación discreta: “Detector de llamadas activo”. Cuando el sistema entre en modo de llamada aparecerá otra notificación con Grabar. Toca Grabar para iniciar; la grabación continúa con la app cerrada y se detiene al finalizar la llamada.", 14, false);
         info.setPadding(0, dp(14), 0, dp(8));
         root.addView(info);
 
@@ -131,7 +144,27 @@ public class MainActivity extends Activity {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.RECORD_AUDIO);
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.POST_NOTIFICATIONS);
         if (!need.isEmpty()) requestPermissions(need.toArray(new String[0]), REQ_PERMS);
-        else Toast.makeText(this, "Permisos básicos concedidos", Toast.LENGTH_SHORT).show();
+        else {
+            ensureDetectorServiceIfPossible();
+            Toast.makeText(this, "Permisos básicos concedidos", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void ensureDetectorServiceIfPossible() {
+        boolean notifAllowed = Build.VERSION.SDK_INT < 33
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        if (notifAllowed) ensureDetectorService();
+    }
+
+    private void ensureDetectorService() {
+        try {
+            Intent service = new Intent(this, CallDetectionForegroundService.class);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(service);
+            else startService(service);
+        } catch (Throwable t) {
+            DebugLog.write(this, "Could not start detector service: " + t);
+            Toast.makeText(this, "No se pudo activar el detector: " + t.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
+        }
     }
 
     private void openBatteryExemption() {
@@ -160,17 +193,32 @@ public class MainActivity extends Activity {
         boolean mic = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
         boolean notif = notificationListenerEnabled();
         boolean battery = batteryExempt();
+        boolean detector = AppState.prefs(this).getBoolean(AppState.KEY_DETECTOR_ACTIVE, false);
         boolean rec = AppState.prefs(this).getBoolean(AppState.KEY_RECORDING_ACTIVE, false);
         String kind = AppState.prefs(this).getString(AppState.KEY_CALL_KIND, "-");
-        boolean call = AppState.prefs(this).getBoolean(AppState.KEY_NOTIFICATION_CALL_ACTIVE, false);
-        boolean ready = mic && notif && battery;
+        boolean notificationCall = AppState.prefs(this).getBoolean(AppState.KEY_NOTIFICATION_CALL_ACTIVE, false);
+        boolean audioCall = AppState.prefs(this).getBoolean(AppState.KEY_AUDIO_CALL_ACTIVE, false);
+        boolean call = notificationCall || audioCall;
+        boolean ready = mic && battery && detector;
+
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        int mode = am == null ? AudioManager.MODE_NORMAL : am.getMode();
 
         status.setText("SEGUNDO PLANO: " + (ready ? "LISTO" : "FALTA CONFIGURAR")
                 + "\n\nMicrófono: " + mark(mic)
-                + "\nDetección de llamadas: " + mark(notif)
+                + "\nDetector persistente: " + mark(detector)
+                + "\nClasificación WhatsApp: " + mark(notif)
                 + "\nBatería sin restricción: " + mark(battery)
+                + "\nModo de audio: " + audioModeLabel(mode)
                 + "\nLlamada detectada: " + (call ? kind : "NO")
                 + "\nGrabando ahora: " + (rec ? "SÍ" : "NO"));
+    }
+
+    private String audioModeLabel(int mode) {
+        if (mode == AudioManager.MODE_IN_CALL) return "IN_CALL";
+        if (mode == AudioManager.MODE_IN_COMMUNICATION) return "IN_COMMUNICATION";
+        if (mode == AudioManager.MODE_RINGTONE) return "RINGTONE";
+        return "NORMAL";
     }
 
     private boolean notificationListenerEnabled() {
