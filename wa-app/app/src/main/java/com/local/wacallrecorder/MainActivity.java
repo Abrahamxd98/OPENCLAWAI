@@ -3,6 +3,7 @@ package com.local.wacallrecorder;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
@@ -31,8 +32,7 @@ public class MainActivity extends Activity {
     private TextView status;
     private LinearLayout root;
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         buildUi();
         requestRuntimePermissions();
@@ -46,8 +46,7 @@ public class MainActivity extends Activity {
         refreshRecordings();
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_PERMS) {
             ensureDetectorServiceIfPossible();
@@ -63,8 +62,8 @@ public class MainActivity extends Activity {
         root.setPadding(p, p, p, p);
         scroll.addView(root);
 
-        root.addView(text("Grabador de llamadas · v0.2.1", 24, true));
-        root.addView(text("La detección ya no depende únicamente de las notificaciones. Un detector persistente vigila el modo de audio del sistema para reconocer llamadas celulares y llamadas de internet aun con la app cerrada. El acceso a notificaciones se usa como apoyo para identificar WhatsApp y WhatsApp Business.", 15, false));
+        root.addView(text("Grabador de llamadas · v0.3.0", 24, true));
+        root.addView(text("Grabación automática visible para llamadas celulares, WhatsApp y WhatsApp Business. El detector reconoce el estado de llamada y el servicio de Accesibilidad, una vez activado por ti, inicia y detiene el audio sin que tengas que abrir la app ni tocar Grabar.", 15, false));
 
         status = text("", 15, false);
         status.setPadding(0, dp(16), 0, dp(16));
@@ -75,19 +74,19 @@ public class MainActivity extends Activity {
         root.addView(setup);
         addButton("1. Conceder micrófono y notificaciones", v -> requestRuntimePermissions());
         addButton("2. Activar acceso a notificaciones", v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
-        addButton("3. Permitir funcionamiento en segundo plano", v -> openBatteryExemption());
-        addButton("4. Abrir ajustes de la app / HyperOS", v -> openAppSettings());
+        addButton("3. Activar grabación automática (Accesibilidad)", v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        addButton("4. Permitir funcionamiento en segundo plano", v -> openBatteryExemption());
+        addButton("5. Abrir ajustes de la app / HyperOS", v -> openAppSettings());
         addButton("Activar detector ahora", v -> { ensureDetectorService(); refreshStatus(); });
         addButton("Actualizar estado", v -> { refreshStatus(); refreshRecordings(); });
 
-        TextView info = text("Debe permanecer una notificación discreta: “Detector de llamadas activo”. Cuando el sistema entre en modo de llamada aparecerá otra notificación con Grabar. Toca Grabar para iniciar; la grabación continúa con la app cerrada y se detiene al finalizar la llamada.", 14, false);
+        TextView info = text("Estado correcto: Detector persistente OK + Grabación automática OK. Al comenzar una llamada debe aparecer “● REC” sin tocar ningún botón. Al finalizar, el archivo WAV se cierra automáticamente. La notificación Grabar queda únicamente como respaldo si Accesibilidad no está activa.", 14, false);
         info.setPadding(0, dp(14), 0, dp(8));
         root.addView(info);
 
         TextView h = text("Grabaciones", 19, true);
         h.setPadding(0, dp(20), 0, dp(8));
         root.addView(h);
-
         setContentView(scroll);
     }
 
@@ -124,10 +123,8 @@ public class MainActivity extends Activity {
             player.prepare();
             player.start();
             AlertDialog dialog = new AlertDialog.Builder(this)
-                    .setTitle(f.getName())
-                    .setMessage("Reproduciendo grabación")
-                    .setPositiveButton("Detener", (d, which) -> d.dismiss())
-                    .create();
+                    .setTitle(f.getName()).setMessage("Reproduciendo grabación")
+                    .setPositiveButton("Detener", (d, which) -> d.dismiss()).create();
             dialog.setOnDismissListener(d -> {
                 try { if (player.isPlaying()) player.stop(); } catch (Exception ignored) {}
                 player.release();
@@ -151,16 +148,14 @@ public class MainActivity extends Activity {
     }
 
     private void ensureDetectorServiceIfPossible() {
-        boolean notifAllowed = Build.VERSION.SDK_INT < 33
-                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        boolean notifAllowed = Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
         if (notifAllowed) ensureDetectorService();
     }
 
     private void ensureDetectorService() {
         try {
             Intent service = new Intent(this, CallDetectionForegroundService.class);
-            if (Build.VERSION.SDK_INT >= 26) startForegroundService(service);
-            else startService(service);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(service); else startService(service);
         } catch (Throwable t) {
             DebugLog.write(this, "Could not start detector service: " + t);
             Toast.makeText(this, "No se pudo activar el detector: " + t.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
@@ -194,24 +189,38 @@ public class MainActivity extends Activity {
         boolean notif = notificationListenerEnabled();
         boolean battery = batteryExempt();
         boolean detector = AppState.prefs(this).getBoolean(AppState.KEY_DETECTOR_ACTIVE, false);
+        boolean accessibility = accessibilityEnabled();
         boolean rec = AppState.prefs(this).getBoolean(AppState.KEY_RECORDING_ACTIVE, false);
         String kind = AppState.prefs(this).getString(AppState.KEY_CALL_KIND, "-");
         boolean notificationCall = AppState.prefs(this).getBoolean(AppState.KEY_NOTIFICATION_CALL_ACTIVE, false);
         boolean audioCall = AppState.prefs(this).getBoolean(AppState.KEY_AUDIO_CALL_ACTIVE, false);
         boolean call = notificationCall || audioCall;
-        boolean ready = mic && battery && detector;
+        long lastDuration = AppState.prefs(this).getLong(AppState.KEY_LAST_RECORD_DURATION_MS, 0L);
+        String lastReason = AppState.prefs(this).getString(AppState.KEY_LAST_RECORD_STOP_REASON, "-");
+        boolean ready = mic && battery && detector && accessibility;
 
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         int mode = am == null ? AudioManager.MODE_NORMAL : am.getMode();
 
-        status.setText("SEGUNDO PLANO: " + (ready ? "LISTO" : "FALTA CONFIGURAR")
+        status.setText("AUTOMÁTICO: " + (ready ? "LISTO" : "FALTA CONFIGURAR")
                 + "\n\nMicrófono: " + mark(mic)
                 + "\nDetector persistente: " + mark(detector)
                 + "\nClasificación WhatsApp: " + mark(notif)
+                + "\nGrabación automática: " + mark(accessibility)
                 + "\nBatería sin restricción: " + mark(battery)
                 + "\nModo de audio: " + audioModeLabel(mode)
                 + "\nLlamada detectada: " + (call ? kind : "NO")
-                + "\nGrabando ahora: " + (rec ? "SÍ" : "NO"));
+                + "\nGrabando ahora: " + (rec ? "SÍ" : "NO")
+                + (lastDuration > 0 ? "\nÚltima grabación: " + (lastDuration / 1000) + " s · " + lastReason : ""));
+    }
+
+    private boolean accessibilityEnabled() {
+        String enabled = Settings.Secure.getString(getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        if (enabled == null) return false;
+        ComponentName cn = new ComponentName(this, RecorderAccessibilityService.class);
+        String flat = cn.flattenToString();
+        String shortFlat = cn.flattenToShortString();
+        return enabled.contains(flat) || enabled.contains(shortFlat);
     }
 
     private String audioModeLabel(int mode) {
