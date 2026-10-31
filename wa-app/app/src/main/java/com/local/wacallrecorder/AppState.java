@@ -7,11 +7,17 @@ public final class AppState {
     public static final String PREFS = "wa_recorder_state";
     public static final String ACTION_STATE_CHANGED = "com.local.wacallrecorder.STATE_CHANGED";
     public static final String KEY_NOTIFICATION_CALL_ACTIVE = "notification_call_active";
+    public static final String KEY_AUDIO_CALL_ACTIVE = "audio_call_active";
+    public static final String KEY_DETECTOR_ACTIVE = "detector_active";
     public static final String KEY_CELLULAR_CALL_ACTIVE = "cellular_call_active";
     public static final String KEY_CONTACT = "contact";
     public static final String KEY_CALL_PACKAGE = "call_package";
     public static final String KEY_CALL_KIND = "call_kind";
     public static final String KEY_CALL_START_MS = "call_start_ms";
+    public static final String KEY_AUDIO_MODE = "audio_mode";
+    public static final String KEY_LAST_WA_NOTIFICATION_MS = "last_wa_notification_ms";
+    public static final String KEY_LAST_WA_PACKAGE = "last_wa_package";
+    public static final String KEY_LAST_WA_TITLE = "last_wa_title";
     public static final String KEY_RECORDING_ACTIVE = "recording_active";
     public static final String KEY_RECORDING_OWNER = "recording_owner";
 
