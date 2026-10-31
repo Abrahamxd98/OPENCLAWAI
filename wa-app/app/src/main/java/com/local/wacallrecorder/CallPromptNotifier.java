@@ -54,6 +54,7 @@ public final class CallPromptNotifier {
     private static String labelForKind(String kind) {
         if ("WHATSAPP_BUSINESS".equals(kind)) return "WhatsApp Business";
         if ("WHATSAPP".equals(kind)) return "WhatsApp";
+        if ("VOIP".equals(kind)) return "Llamada de internet";
         return "Llamada celular";
     }
 
