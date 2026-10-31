@@ -16,6 +16,7 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
         if (sbn == null || !isSupportedCallNotification(sbn)) return;
+        rememberWhatsAppNotification(sbn);
         boolean looksLikeCall = looksLikeCall(sbn);
         logNotification("posted", sbn, looksLikeCall);
         if (!looksLikeCall) return;
@@ -25,7 +26,7 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
         Bundle extras = n == null || n.extras == null ? new Bundle() : n.extras;
         String title = stringOf(extras.getCharSequence(Notification.EXTRA_TITLE));
         String kind = AppState.callKindForPackage(sbn.getPackageName());
-        String fallback = "CELULAR".equals(kind) ? "Llamada celular" : kind;
+        String fallback = "CELULAR".equals(kind) ? "Llamada celular" : labelForKind(kind);
         String contact = title.trim().isEmpty() ? fallback : title.trim();
         long now = System.currentTimeMillis();
 
@@ -65,11 +66,25 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
                 .remove(AppState.KEY_CALL_PACKAGE)
                 .apply();
         sendStateBroadcast();
-        CallPromptNotifier.cancel(this);
 
-        Intent stop = new Intent(this, RecorderForegroundService.class);
-        stop.setAction(RecorderForegroundService.ACTION_STOP);
-        stopService(stop);
+        boolean audioCallActive = AppState.prefs(this).getBoolean(AppState.KEY_AUDIO_CALL_ACTIVE, false);
+        if (!audioCallActive) {
+            CallPromptNotifier.cancel(this);
+            stopService(new Intent(this, RecorderForegroundService.class));
+        }
+    }
+
+    private void rememberWhatsAppNotification(StatusBarNotification sbn) {
+        String pkg = sbn.getPackageName();
+        if (!AppState.isWhatsApp(pkg)) return;
+        Notification n = sbn.getNotification();
+        Bundle extras = n == null || n.extras == null ? new Bundle() : n.extras;
+        String title = stringOf(extras.getCharSequence(Notification.EXTRA_TITLE));
+        AppState.prefs(this).edit()
+                .putLong(AppState.KEY_LAST_WA_NOTIFICATION_MS, System.currentTimeMillis())
+                .putString(AppState.KEY_LAST_WA_PACKAGE, pkg)
+                .putString(AppState.KEY_LAST_WA_TITLE, title)
+                .apply();
     }
 
     private boolean isSupportedCallNotification(StatusBarNotification sbn) {
@@ -118,6 +133,12 @@ public class WhatsAppNotificationListener extends NotificationListenerService {
 
     private static String stringOf(CharSequence s) {
         return s == null ? "" : s.toString();
+    }
+
+    private static String labelForKind(String kind) {
+        if ("WHATSAPP_BUSINESS".equals(kind)) return "WhatsApp Business";
+        if ("WHATSAPP".equals(kind)) return "WhatsApp";
+        return "Llamada celular";
     }
 
     private static boolean containsExcludedWords(String value) {
