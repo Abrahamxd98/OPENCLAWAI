@@ -17,10 +17,10 @@ import android.os.Looper;
 public class CallDetectionForegroundService extends Service {
     private static final String CHANNEL = "call_detector";
     private static final int ID = 7000;
-    private static final long POLL_MS = 750L;
-    private static final long START_DEBOUNCE_MS = 700L;
-    private static final long END_DEBOUNCE_MS = 2200L;
-    private static final long RECENT_WA_MS = 15000L;
+    private static final long POLL_MS = 500L;
+    private static final long START_DEBOUNCE_MS = 500L;
+    private static final long END_DEBOUNCE_MS = 8000L;
+    private static final long RECENT_WA_MS = 90000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private AudioManager audioManager;
@@ -45,11 +45,8 @@ public class CallDetectionForegroundService extends Service {
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         createChannel();
         Notification notification = buildNotification();
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
-        } else {
-            startForeground(ID, notification);
-        }
+        if (Build.VERSION.SDK_INT >= 34) startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+        else startForeground(ID, notification);
         AppState.prefs(this).edit().putBoolean(AppState.KEY_DETECTOR_ACTIVE, true).apply();
         sendStateBroadcast();
         handler.removeCallbacks(pollRunnable);
@@ -57,15 +54,13 @@ public class CallDetectionForegroundService extends Service {
         DebugLog.write(this, "Persistent audio-mode detector started");
     }
 
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        return START_STICKY;
-    }
+    @Override public int onStartCommand(Intent intent, int flags, int startId) { return START_STICKY; }
 
     private void pollAudioMode() {
         int mode = audioManager == null ? AudioManager.MODE_NORMAL : audioManager.getMode();
         boolean active = mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION;
         long now = System.currentTimeMillis();
+        AppState.prefs(this).edit().putInt(AppState.KEY_AUDIO_MODE, mode).apply();
 
         if (active) {
             normalSince = 0L;
@@ -84,7 +79,10 @@ public class CallDetectionForegroundService extends Service {
         activeCandidateSince = 0L;
         candidateMode = AudioManager.MODE_NORMAL;
         if (!audioCallActive) return;
-        if (normalSince == 0L) normalSince = now;
+        if (normalSince == 0L) {
+            normalSince = now;
+            DebugLog.write(this, "Audio mode temporarily NORMAL; end debounce started");
+        }
         if (now - normalSince >= END_DEBOUNCE_MS) endCall(mode);
     }
 
@@ -120,7 +118,7 @@ public class CallDetectionForegroundService extends Service {
                 .putInt(AppState.KEY_AUDIO_MODE, mode)
                 .putLong(AppState.KEY_CALL_START_MS, now)
                 .apply();
-        DebugLog.write(this, "Audio mode call detected mode=" + mode + " kind=" + kind + " contact=" + contact);
+        DebugLog.write(this, "Audio call START mode=" + mode + " kind=" + kind + " contact=" + contact);
         CallPromptNotifier.show(this, contact, kind);
         sendStateBroadcast();
     }
@@ -131,13 +129,12 @@ public class CallDetectionForegroundService extends Service {
         if (!"VOIP".equals(currentKind)) return;
         String recentPkg = recentWhatsAppPackage(p, now);
         if (recentPkg == null) return;
-
         String kind = AppState.callKindForPackage(recentPkg);
         String title = p.getString(AppState.KEY_LAST_WA_TITLE, "");
         String contact = title == null || title.trim().isEmpty() ? labelForKind(kind) : title.trim();
         p.edit().putString(AppState.KEY_CALL_KIND, kind).putString(AppState.KEY_CONTACT, contact).apply();
         DebugLog.write(this, "VOIP classification upgraded to " + kind + " contact=" + contact);
-        CallPromptNotifier.show(this, contact, kind);
+        if (!p.getBoolean(AppState.KEY_RECORDING_ACTIVE, false)) CallPromptNotifier.show(this, contact, kind);
         sendStateBroadcast();
     }
 
@@ -158,7 +155,7 @@ public class CallDetectionForegroundService extends Service {
                 .putInt(AppState.KEY_AUDIO_MODE, mode)
                 .remove(AppState.KEY_CALL_PACKAGE)
                 .apply();
-        DebugLog.write(this, "Audio mode call ended kind=" + kind + " mode=" + mode);
+        DebugLog.write(this, "Audio call END kind=" + kind + " mode=" + mode + " after " + END_DEBOUNCE_MS + "ms normal");
         CallPromptNotifier.cancel(this);
         stopService(new Intent(this, RecorderForegroundService.class));
         sendStateBroadcast();
@@ -168,12 +165,10 @@ public class CallDetectionForegroundService extends Service {
         Intent open = new Intent(this, MainActivity.class);
         PendingIntent openPi = PendingIntent.getActivity(this, 7000, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification.Builder b = Build.VERSION.SDK_INT >= 26
-                ? new Notification.Builder(this, CHANNEL)
-                : new Notification.Builder(this);
+        Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
         return b.setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle("Detector de llamadas activo")
-                .setContentText("Vigilando llamadas celulares y de internet")
+                .setContentText("Vigilando llamadas celulares, WhatsApp y WhatsApp Business")
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setContentIntent(openPi)
@@ -202,8 +197,7 @@ public class CallDetectionForegroundService extends Service {
         sendBroadcast(i);
     }
 
-    @Override
-    public void onDestroy() {
+    @Override public void onDestroy() {
         handler.removeCallbacks(pollRunnable);
         AppState.prefs(this).edit().putBoolean(AppState.KEY_DETECTOR_ACTIVE, false).apply();
         sendStateBroadcast();
