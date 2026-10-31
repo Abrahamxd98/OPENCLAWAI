@@ -9,6 +9,7 @@ public final class AppState {
     public static final String KEY_NOTIFICATION_CALL_ACTIVE = "notification_call_active";
     public static final String KEY_AUDIO_CALL_ACTIVE = "audio_call_active";
     public static final String KEY_DETECTOR_ACTIVE = "detector_active";
+    public static final String KEY_ACCESSIBILITY_CONNECTED = "accessibility_connected";
     public static final String KEY_CELLULAR_CALL_ACTIVE = "cellular_call_active";
     public static final String KEY_CONTACT = "contact";
     public static final String KEY_CALL_PACKAGE = "call_package";
@@ -20,6 +21,8 @@ public final class AppState {
     public static final String KEY_LAST_WA_TITLE = "last_wa_title";
     public static final String KEY_RECORDING_ACTIVE = "recording_active";
     public static final String KEY_RECORDING_OWNER = "recording_owner";
+    public static final String KEY_LAST_RECORD_DURATION_MS = "last_record_duration_ms";
+    public static final String KEY_LAST_RECORD_STOP_REASON = "last_record_stop_reason";
 
     private AppState() {}
 
