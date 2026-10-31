@@ -36,12 +36,25 @@
         </service>
 
         <service
+            android:name=".RecorderAccessibilityService"
+            android:label="Grabador de llamadas - grabación automática"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/wa_accessibility_service" />
+        </service>
+
+        <service
             android:name=".CallDetectionForegroundService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Continuous local AudioManager call-state detection used to present a user-initiated recording action." />
+                android:value="Continuous local AudioManager call-state detection used to coordinate visible user-enabled call recording." />
         </service>
 
         <service
